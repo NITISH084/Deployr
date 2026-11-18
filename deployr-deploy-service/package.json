@@ -1,0 +1,24 @@
+{
+  "name": "deployr-deploy-service",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1171.0",
+    "@aws-sdk/lib-storage": "^3.1172.0",
+    "aws-sdk": "^2.1693.0",
+    "dotenv": "^18.0.10",
+    "redis": "^6.3.1",
+    "typescript": "^7.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6"
+  }
+}
