@@ -4,6 +4,7 @@ import { buildProject, copyFinalDist } from "./utils.js";
 
 const subscriber = createClient({
   url: "redis://127.0.0.1:6379",
+  RESP: 2,
 });
 
 subscriber.on("error", (err) => {
@@ -14,6 +15,7 @@ await subscriber.connect();
 
 const publisher = createClient({
   url: "redis://127.0.0.1:6379",
+  RESP: 2,
 });
 
 publisher.on("error", (err) => {

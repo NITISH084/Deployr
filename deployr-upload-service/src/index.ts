@@ -16,6 +16,7 @@ app.use(express.json());
 
 const publisher = createClient({
     url: "redis://127.0.0.1:6379",
+    RESP: 2,
 });
 
 publisher.on("error", (err) => {
@@ -26,6 +27,7 @@ await publisher.connect();
 
 const subscriber = createClient({
     url: "redis://127.0.0.1:6379",
+    RESP: 2,
 });
 
 subscriber.on("error", (err) => {
@@ -83,6 +85,6 @@ app.get("/status", async(req, res)=>{
   })
 })
 
-app.listen(3000, ()=>{
+app.listen(3000, "127.0.0.1", ()=>{
   console.log("Listening on port 3000");
 });
