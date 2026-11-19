@@ -105,6 +105,6 @@ app.get("/{*splat}", async (req, res) => {
   }
 });
 
-app.listen(3001, () => {
+app.listen(3001, "127.0.0.1", () => {
   console.log("Static server listening on port 3001");
 });
