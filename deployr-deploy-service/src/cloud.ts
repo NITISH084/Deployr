@@ -53,6 +53,7 @@ export const getAllFiles = (folderPath: string) => {
 
   const allFilesAndFolders = fs.readdirSync(folderPath);
   for(const file of allFilesAndFolders){
+    if (file === ".git") continue;
     const absolute = path.join(folderPath, file);
     if(fs.statSync(absolute).isDirectory()){
       response.push(...getAllFiles(absolute));

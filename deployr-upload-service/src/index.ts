@@ -4,11 +4,9 @@ import { simpleGit } from 'simple-git';
 import { generate, getAllFiles } from "./utils.js";
 import { uploadFile } from "./cloud.js"
 import path from "path";
-import { fileURLToPath } from "url";
+import { rm } from "node:fs/promises";
 import {createClient} from "redis"
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { TEMP_ROOT } from "./paths.js";
 
 const app = express();
 app.use(cors());
@@ -42,7 +40,7 @@ console.log("Redis connected successfully!");
 app.post("/deploy", async (req, res) => {
   const  repoURL  = req.body.repoURL;
   const id = generate();
-  const projectPath = path.join(__dirname, `temp/${id}`);
+  const projectPath = path.join(TEMP_ROOT, `${id}`);
 
   try {
     const git = simpleGit();
@@ -54,7 +52,7 @@ app.post("/deploy", async (req, res) => {
     // the deploy service can pick up the job while the bucket is still empty.
     await Promise.all(
       files.map((file) => {
-        const key = path.relative(__dirname, file).split(path.sep).join("/");
+        const key = path.relative(path.dirname(TEMP_ROOT), file).split(path.sep).join("/");
         return uploadFile(key, file);
       })
     );
@@ -74,6 +72,21 @@ app.post("/deploy", async (req, res) => {
     res.status(500).json({
       error: "Failed to queue deployment"
     });
+  }  finally {
+    // Always remove the local clone.
+    try {
+      await rm(projectPath, {
+        recursive: true,
+        force: true
+      });
+
+      console.log(`Cleaned up temporary source for ${id}`);
+    } catch (cleanupError) {
+      console.error(
+        `Failed to clean up temporary source for ${id}:`,
+        cleanupError
+      );
+    }
   }
 })
 
