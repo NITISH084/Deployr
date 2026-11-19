@@ -1,0 +1,108 @@
+name: Deployr deploy workflow
+
+on:
+  push:
+    branches:
+      - master
+
+concurrency:
+  group: deployr-production
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build all services
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install and build Upload Service
+        working-directory: deployr-upload-service
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install and build Deploy Service
+        working-directory: deployr-deploy-service
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install and build Request Handler
+        working-directory: deployr-request-handler
+        run: |
+          npm ci
+          npm run build
+
+  deploy:
+    name: Deploy to Oracle VM
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Configure verified SSH host
+        env:
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 700 ~/.ssh
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy on Oracle VM
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" 'bash -se' <<'REMOTE'
+            set -e
+
+            cd /home/ubuntu/Deployr
+
+            echo "Pulling latest code..."
+            git pull --ff-only origin master
+
+            for service in \
+              deployr-upload-service \
+              deployr-deploy-service \
+              deployr-request-handler
+            do
+              echo "Building $service..."
+              cd "/home/ubuntu/Deployr/$service"
+              npm ci
+              npm run build
+            done
+
+            echo "Restarting services..."
+            sudo -n systemctl restart deployr-upload.service
+            sudo -n systemctl restart deployr-worker.service
+            sudo -n systemctl restart deployr-request.service
+
+            echo "Checking service status..."
+            for service in \
+              deployr-upload.service \
+              deployr-worker.service \
+              deployr-request.service
+            do
+              systemctl is-active --quiet "$service"
+              echo "$service is active"
+            done
+
+            echo "Deployr deployment successful!"
+          REMOTE
+
