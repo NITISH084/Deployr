@@ -1,10 +1,19 @@
+
+import {
+  DeleteObjectsCommand,
+  GetObjectCommand,
+  ListObjectsV2Command,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
-import { GetObjectCommand, ListObjectsV2Command, S3Client } from "@aws-sdk/client-s3";
+
 import fs from "fs";
 import path from "path";
 import dotenv from "dotenv";
+
 import type { Readable } from "stream";
 import { pipeline } from "node:stream/promises";
+
 import { TEMP_ROOT } from "./paths.js";
 
 dotenv.config();
@@ -46,53 +55,65 @@ const s3 = new S3Client({
     accessKeyId,
     secretAccessKey,
   },
-})
+});
 
-export const getAllFiles = (folderPath: string) => {
-  let response: string[] = [];
+const BUCKET = "deployr";
+
+export const getAllFiles = (folderPath: string): string[] => {
+  const response: string[] = [];
 
   const allFilesAndFolders = fs.readdirSync(folderPath);
-  for(const file of allFilesAndFolders){
+
+  for (const file of allFilesAndFolders) {
     if (file === ".git") continue;
+
     const absolute = path.join(folderPath, file);
-    if(fs.statSync(absolute).isDirectory()){
+
+    if (fs.statSync(absolute).isDirectory()) {
       response.push(...getAllFiles(absolute));
-    }
-    else{
+    } else {
       response.push(absolute);
     }
   }
-  return response;
-}
 
-export const uploadFile = async (fileName: string, localFilePath: string) => {
+  return response;
+};
+
+export const uploadFile = async (
+  fileName: string,
+  localFilePath: string
+): Promise<void> => {
   const fileContent = fs.readFileSync(localFilePath);
-  const contentType = CONTENT_TYPES[path.extname(localFilePath).toLowerCase()];
+  const contentType = CONTENT_TYPES[
+    path.extname(localFilePath).toLowerCase()
+  ];
 
   const response = await new Upload({
     client: s3,
     params: {
       Body: fileContent,
-      Bucket: "deployr",
+      Bucket: BUCKET,
       Key: fileName,
       ...(contentType ? { ContentType: contentType } : {}),
     },
   }).done();
-  console.log('Uploaded the build.', response);
-}
 
-
+  console.log("Uploaded file:", fileName, response);
+};
 
 export async function downloadS3Folder(id: string): Promise<number> {
   const safeId = path.basename(id);
-  const prefix = `temp/${safeId}`;
-  let continuationToken: string | undefined;
+  const prefix = `temp/${safeId}/`;
 
   const rootPath = path.join(TEMP_ROOT, safeId);
 
-  // Remove files left over from a previous run so a stale directory can never
-  // hide the fact that this build's sources were not uploaded.
-  await fs.promises.rm(rootPath, { recursive: true, force: true });
+  // Remove files left over from a previous run.
+  await fs.promises.rm(rootPath, {
+    recursive: true,
+    force: true,
+  });
+
+  let continuationToken: string | undefined;
 
   let totalListed = 0;
   let totalDownloaded = 0;
@@ -103,14 +124,14 @@ export async function downloadS3Folder(id: string): Promise<number> {
 
     const result = await s3.send(
       new ListObjectsV2Command({
-        Bucket: "deployr",
-        Prefix: `${prefix}/`,
+        Bucket: BUCKET,
+        Prefix: prefix,
         ContinuationToken: continuationToken,
       })
     );
 
     const files = (result.Contents ?? []).filter(
-      item => item.Key && !item.Key.endsWith("/")
+      (item) => item.Key && !item.Key.endsWith("/")
     );
 
     totalListed += files.length;
@@ -119,7 +140,6 @@ export async function downloadS3Folder(id: string): Promise<number> {
       `Page ${page}: R2 returned ${files.length} objects`
     );
 
-    // Process objects in small batches to avoid overwhelming the system.
     const batchSize = 20;
 
     for (let i = 0; i < files.length; i += batchSize) {
@@ -129,8 +149,12 @@ export async function downloadS3Folder(id: string): Promise<number> {
         batch.map(async ({ Key }) => {
           if (!Key) return;
 
-          const relativePath = path.relative(prefix, Key);
-          const outputPath = path.resolve(rootPath, relativePath);
+          const relativePath = Key.slice(prefix.length);
+
+          const outputPath = path.resolve(
+            rootPath,
+            ...relativePath.split("/")
+          );
 
           if (
             outputPath !== rootPath &&
@@ -145,7 +169,7 @@ export async function downloadS3Folder(id: string): Promise<number> {
 
           const response = await s3.send(
             new GetObjectCommand({
-              Bucket: "deployr",
+              Bucket: BUCKET,
               Key,
             })
           );
@@ -167,7 +191,6 @@ export async function downloadS3Folder(id: string): Promise<number> {
     continuationToken = result.IsTruncated
       ? result.NextContinuationToken
       : undefined;
-
   } while (continuationToken);
 
   console.log("Download summary:", {
@@ -185,3 +208,75 @@ export async function downloadS3Folder(id: string): Promise<number> {
   return totalDownloaded;
 }
 
+/**
+ * Deletes all source files belonging to a deployment from R2.
+ *
+ * Only deletes temp/<deploymentId>/.
+ * Never deletes dist/<deploymentId>/.
+ */
+export async function deleteS3TempFolder(
+  id: string
+): Promise<void> {
+  const safeId = path.basename(id);
+  const prefix = `temp/${safeId}/`;
+
+  console.log(`Starting R2 cleanup: ${prefix}`);
+
+  let continuationToken: string | undefined;
+  let totalDeleted = 0;
+
+  do {
+    const result = await s3.send(
+      new ListObjectsV2Command({
+        Bucket: BUCKET,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+      })
+    );
+
+    const keys = (result.Contents ?? [])
+      .map((item) => item.Key)
+      .filter((key): key is string => Boolean(key));
+
+    if (keys.length > 0) {
+      // S3 DeleteObjects supports a maximum of 1000 objects per request.
+      const batchSize = 1000;
+
+      for (let i = 0; i < keys.length; i += batchSize) {
+        const batch = keys.slice(i, i + batchSize);
+
+        const deleteResult = await s3.send(
+          new DeleteObjectsCommand({
+            Bucket: BUCKET,
+            Delete: {
+              Objects: batch.map((Key) => ({ Key })),
+              Quiet: true,
+            },
+          })
+        );
+
+        if (deleteResult.Errors?.length) {
+          console.error("R2 deletion errors:", deleteResult.Errors);
+
+          throw new Error(
+            `Failed to delete ${deleteResult.Errors.length} R2 objects`
+          );
+        }
+
+        totalDeleted += batch.length;
+
+        console.log(
+          `Deleted ${batch.length} objects from ${prefix}`
+        );
+      }
+    }
+
+    continuationToken = result.IsTruncated
+      ? result.NextContinuationToken
+      : undefined;
+  } while (continuationToken);
+
+  console.log(
+    `R2 cleanup completed: ${prefix}. Total deleted: ${totalDeleted}`
+  );
+}

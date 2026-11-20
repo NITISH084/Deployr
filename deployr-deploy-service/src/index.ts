@@ -1,5 +1,5 @@
 import {createClient} from "redis";
-import {downloadS3Folder} from "./cloud.js";
+import {deleteS3TempFolder, downloadS3Folder} from "./cloud.js";
 import { buildProject, copyFinalDist } from "./utils.js";
 import path from "node:path";
 import { rm } from "node:fs/promises";
@@ -64,6 +64,14 @@ async function main() {
       await copyFinalDist(key);
 
       await publisher.hSet("build-status", key, "Deployed");
+
+      // Only delete source after the final output is uploaded.
+      try {
+        await deleteS3TempFolder(key);
+      } catch (error) {
+        // Cleanup failure should not invalidate an otherwise successful deployment.
+        console.error(`R2 cleanup failed for ${key}:`, error);
+      }
 
       console.log(`Deployment ${key} completed successfully.`);
     } catch (err) {
