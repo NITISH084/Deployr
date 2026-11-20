@@ -63,12 +63,19 @@ export function buildProject(id: string): Promise<void>{
     }
 
     dockerArgs.push(
-      "-v", `${projectPath}:/app`,   // Mount project directory
-      "-w", "/app",                  // Set working directory
-      "--memory", "1g",              // Prevent out-of-memory host crashes
-      "--cpus", "1.0",               // Limit CPU usage
-      "node:20-bookworm-slim",              // Lightweight Node image
-      "sh", "-c", "npm install && npm run build"
+      "-v", `${projectPath}:/app`,
+      "-w", "/app",
+      "--memory", "1g",
+      "--cpus", "1.0",
+      "node:20-bookworm-slim",
+      "sh", "-c",
+      `echo "Architecture: $(node -p 'process.arch')" &&
+      echo "npm omit: $(npm config get omit)" &&
+      npm install --include=optional &&
+      echo "Rollup version: $(node -p "require('rollup/package.json').version")" &&
+      echo "Installed native packages:" &&
+      ls node_modules/@rollup/ &&
+      npm run build`
     );
 
     const child = spawn("docker", dockerArgs);
