@@ -3,7 +3,7 @@ import fs from "fs";
 import { spawn } from "child_process";
 import { uploadFile, getAllFiles } from "./cloud.js";
 import { TEMP_ROOT } from "./paths.js";
-import { detectFramework } from "./frameworks.js";
+import { detectFramework } from "./framework.js";
 
 
 export async function copyFinalDist(id: string): Promise<void> {
