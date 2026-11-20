@@ -412,8 +412,9 @@ For security issues, do not post exploit details in a public issue. Use GitHub's
 
 ## License
 
-The backend packages declare the **ISC** license. Add a `LICENSE` file to the repository root to make the terms explicit.
+Deployr is licensed under the **ISC License**. You are free to use, copy, modify, and distribute the software, subject to the terms of the license.
 
+See the [LICENSE](LICENSE) file for the full license text.
 ---
 
 <div align="center">
