@@ -57,6 +57,8 @@ async function main() {
         );
       }
 
+      await publisher.hSet("build-status", key, "Building");
+
       // 3. Build and publish the deployment.
       await buildProject(key);
       await copyFinalDist(key);
