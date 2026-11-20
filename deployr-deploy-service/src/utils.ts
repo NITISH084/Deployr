@@ -67,7 +67,7 @@ export function buildProject(id: string): Promise<void>{
       "-w", "/app",                  // Set working directory
       "--memory", "1g",              // Prevent out-of-memory host crashes
       "--cpus", "1.0",               // Limit CPU usage
-      "node:20-alpine",              // Lightweight Node image
+      "node:20-bookworm-slim",              // Lightweight Node image
       "sh", "-c", "npm install && npm run build"
     );
 
