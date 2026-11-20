@@ -81,6 +81,10 @@ export function buildProject(id: string): Promise<void> {
       echo ""
       echo "Starting project build..."
 
+
+      # Compatibility for older Webpack versions on modern Node.js.
+      export NODE_OPTIONS="\${NODE_OPTIONS:+$NODE_OPTIONS }--openssl-legacy-provider"
+
       npm run build
 
       echo ""
