@@ -71,6 +71,7 @@ export function buildProject(id: string): Promise<void>{
       "sh", "-c",
       `echo "Architecture: $(node -p 'process.arch')" &&
       echo "npm omit: $(npm config get omit)" &&
+      rm -rf node_modules package-lock.json &&
       npm install --include=optional &&
       echo "Rollup version: $(node -p "require('rollup/package.json').version")" &&
       echo "Installed native packages:" &&
