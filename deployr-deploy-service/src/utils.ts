@@ -3,33 +3,109 @@ import fs from "fs";
 import { spawn } from "child_process";
 import { uploadFile, getAllFiles } from "./cloud.js";
 import { TEMP_ROOT } from "./paths.js";
+import { detectFramework } from "./frameworks.js";
+
 
 export async function copyFinalDist(id: string): Promise<void> {
   const safeId = path.basename(id);
-  const folderPath = path.join(TEMP_ROOT, safeId, "dist");
+  const projectPath = path.join(TEMP_ROOT, safeId);
 
-  if (!fs.existsSync(folderPath)) {
+  const framework = detectFramework(projectPath);
+
+  console.log(
+    `Detected framework: ${framework.name}`
+  );
+
+  const pkgPath = path.join(projectPath, "package.json");
+
+  const pkg = fs.existsSync(pkgPath)
+    ? JSON.parse(fs.readFileSync(pkgPath, "utf-8"))
+    : {};
+
+  // Allow users to explicitly configure their build output.
+  const customOutput = pkg.deployr?.outputDirectory;
+
+  const candidates = customOutput
+    ? [customOutput]
+    : framework.outputDirectories;
+
+  if (candidates.length === 0) {
     throw new Error(
-      `Build produced no output directory at ${folderPath}. ` +
-        `The project must run "npm run build" and emit a "dist" folder.`
+      `Could not determine output directory for ${framework.name}.`
     );
   }
 
-  const allFiles = getAllFiles(folderPath);
+  let outputDir: string | undefined;
+
+  for (const candidate of candidates) {
+    const resolved = path.resolve(projectPath, candidate);
+
+    // Prevent paths outside the downloaded project.
+    if (
+      resolved !== projectPath &&
+      !resolved.startsWith(projectPath + path.sep)
+    ) {
+      throw new Error(
+        `Invalid output directory: ${candidate}`
+      );
+    }
+
+    if (
+      fs.existsSync(resolved) &&
+      fs.statSync(resolved).isDirectory()
+    ) {
+      outputDir = resolved;
+      break;
+    }
+  }
+
+  if (!outputDir) {
+    throw new Error(
+      `Build output not found for ${framework.name}. ` +
+      `Checked: ${candidates.join(", ")}. ` +
+      `Make sure the project is configured for static export.`
+    );
+  }
+
+  const allFiles = getAllFiles(outputDir);
+
+  if (allFiles.length === 0) {
+    throw new Error(
+      `Build output directory is empty: ${outputDir}`
+    );
+  }
+
+  // Static websites should have an entry HTML file.
+  if (!fs.existsSync(path.join(outputDir, "index.html"))) {
+    throw new Error(
+      `No index.html found in ${outputDir}. ` +
+      `This project may require a server runtime instead of static hosting.`
+    );
+  }
+
+  console.log(
+    `Uploading ${allFiles.length} files from ${outputDir}`
+  );
 
   await Promise.all(
     allFiles.map((file) => {
       const relativePath = path
-        .relative(folderPath, file)
+        .relative(outputDir!, file)
         .split(path.sep)
         .join("/");
 
-      return uploadFile(`dist/${safeId}/${relativePath}`, file);
+      return uploadFile(
+        `dist/${safeId}/${relativePath}`,
+        file
+      );
     })
   );
 
-  console.log(`All build files uploaded for ${safeId}`);
+  console.log(
+    `Successfully uploaded ${allFiles.length} files for ${safeId}`
+  );
 }
+
 
 export function buildProject(id: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -42,7 +118,7 @@ export function buildProject(id: string): Promise<void> {
       reject(
         new Error(
           `No package.json found at ${projectPath}/package.json. ` +
-            `The project sources were not downloaded properly.`
+          `The project sources were not downloaded properly.`
         )
       );
       return;
